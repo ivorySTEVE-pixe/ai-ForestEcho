@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.cache/
+.claude/
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+models/*.pt
+models/*.ckpt
+.ipynb_checkpoints/
+.DS_Store
+*.egg-info/
+build/
+dist/
