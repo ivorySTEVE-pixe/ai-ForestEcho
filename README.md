@@ -1,5 +1,7 @@
 # ForestEcho
 
+Build Type: AI-assisted (generated + human-guided)
+
 ML system for recognizing animal vocalizations in the wild and identifying species from audio.
 
 ## Overview
