@@ -10,6 +10,8 @@ data/processed/*
 !data/processed/.gitkeep
 models/*.pt
 models/*.ckpt
+reports/
+runs/
 .ipynb_checkpoints/
 .DS_Store
 *.egg-info/

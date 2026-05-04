@@ -1,0 +1,42 @@
+data:
+  raw_dir: data/raw_birds
+  processed_dir: data/processed
+  sample_rate: 16000
+  clip_seconds: 5.0
+  val_split: 0.15
+  test_split: 0.15
+  quality:
+    min_rms: 0.004
+    max_silence_ratio: 0.97
+    max_clipping_ratio: 0.18
+    silence_amplitude: 0.003
+
+model:
+  pretrained: MIT/ast-finetuned-audioset-10-10-0.4593
+  freeze_backbone: false
+  dropout: 0.2
+
+train:
+  batch_size: 8
+  epochs: 20
+  lr: 1.0e-5
+  weight_decay: 1.0e-4
+  num_workers: 2
+  checkpoint_dir: models
+  seed: 42
+  recipe:
+    use_class_weights: true
+    label_smoothing: 0.03
+    min_lr: 1.0e-6
+    early_stopping_patience: 5
+  feedback:
+    use_queue: true
+    path: data/feedback/corrections.jsonl
+  augmentation:
+    enabled: true
+    gain_min: 0.85
+    gain_max: 1.18
+    noise_prob: 0.55
+    noise_level: 0.007
+    time_mask_prob: 0.40
+    time_mask_max_ratio: 0.15
