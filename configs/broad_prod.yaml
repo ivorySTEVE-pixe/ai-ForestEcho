@@ -1,0 +1,42 @@
+data:
+  raw_dir: data/raw_broad
+  processed_dir: data/processed
+  sample_rate: 16000
+  clip_seconds: 5.0
+  val_split: 0.15
+  test_split: 0.15
+  quality:
+    min_rms: 0.005
+    max_silence_ratio: 0.98
+    max_clipping_ratio: 0.20
+    silence_amplitude: 0.003
+
+model:
+  pretrained: MIT/ast-finetuned-audioset-10-10-0.4593
+  freeze_backbone: true
+  dropout: 0.22
+
+train:
+  batch_size: 8
+  epochs: 18
+  lr: 2.5e-4
+  weight_decay: 1.0e-4
+  num_workers: 2
+  checkpoint_dir: models
+  seed: 42
+  recipe:
+    use_class_weights: true
+    label_smoothing: 0.05
+    min_lr: 1.0e-6
+    early_stopping_patience: 5
+  feedback:
+    use_queue: true
+    path: data/feedback/corrections.jsonl
+  augmentation:
+    enabled: true
+    gain_min: 0.85
+    gain_max: 1.20
+    noise_prob: 0.60
+    noise_level: 0.008
+    time_mask_prob: 0.45
+    time_mask_max_ratio: 0.20

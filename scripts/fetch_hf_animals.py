@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from datasets import load_dataset
+from datasets import Audio, load_dataset
 
 DEFAULT_DATASET = "cgeorgiaw/animal-sounds"
 DEFAULT_SUBSET = "birds"
@@ -34,7 +34,7 @@ def slugify(text: str) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", default=DEFAULT_DATASET)
-    ap.add_argument("--subset", default=DEFAULT_SUBSET, help="e.g. birds, dogs, orcas")
+    ap.add_argument("--subset", default=DEFAULT_SUBSET, help="e.g. birds, dogs, orca")
     ap.add_argument("--split", default="train")
     ap.add_argument("--out", default="data/raw")
     ap.add_argument("--max-clips", type=int, default=1200)
@@ -46,22 +46,34 @@ def main() -> None:
 
     print(f"loading dataset={args.dataset} subset={args.subset} split={args.split}")
     ds = load_dataset(args.dataset, args.subset, split=args.split)
+    ds = ds.cast_column("audio", Audio(decode=False))
     if args.max_clips > 0:
         ds = ds.select(range(min(len(ds), args.max_clips)))
 
     counts: dict[str, int] = {}
     saved = 0
+    skipped_bad_audio = 0
     for i, row in enumerate(ds):
         if "audio" not in row or "label" not in row:
             continue
 
         label = slugify(str(row["label"]))
-        audio = row["audio"]
-        arr = np.asarray(audio["array"], dtype=np.float32)
-        sr = int(audio["sampling_rate"])
+        try:
+            audio = row["audio"]
+            apath = audio.get("path")
+            if not apath:
+                skipped_bad_audio += 1
+                continue
+            arr, sr = sf.read(apath, dtype="float32", always_2d=False)
+            arr = np.asarray(arr, dtype=np.float32)
+            sr = int(sr)
+        except Exception:
+            skipped_bad_audio += 1
+            continue
         if arr.ndim > 1:
             arr = arr.mean(axis=1)
         if len(arr) == 0:
+            skipped_bad_audio += 1
             continue
 
         cls_dir = out_root / label
@@ -92,6 +104,8 @@ def main() -> None:
     kept = {k: v for k, v in counts.items() if v >= args.min_per_class}
     print("\nsummary:")
     print(f"  total saved: {saved}")
+    if skipped_bad_audio:
+        print(f"  skipped bad audio: {skipped_bad_audio}")
     print(f"  classes kept (>= {args.min_per_class}): {len(kept)}")
     if removed:
         print(f"  classes removed (< {args.min_per_class}): {len(removed)}")

@@ -59,12 +59,37 @@ Useful subsets to try:
 - `birds` (best for your current goal)
 - `dogs`
 - `zebra_finch`
-- `orcas`
+- `orca`
 
 Then train:
 
 ```bash
 python -m forestecho.train --config configs/default.yaml
+```
+
+### Broad multi-subset dataset (recommended)
+
+Build a wider dataset in one command:
+
+```bash
+python scripts/build_broad_dataset.py --preset broad --out data/raw_broad --min-per-class 20
+```
+
+Tip: for broad builds, keep more rare classes during fetch, then prune globally:
+
+```bash
+python scripts/build_broad_dataset.py --preset broad_plus --out data/raw_broad --subset-min-per-class 1 --min-per-class 10 --clear
+```
+
+Presets:
+- `quick` (faster smoke build)
+- `broad` (balanced default)
+- `broad_plus` (largest curated set)
+
+Then train with:
+
+```bash
+python -m forestecho.train --config configs/broad_prod.yaml
 ```
 
 ## Evaluation Reports

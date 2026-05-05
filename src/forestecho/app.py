@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1060,14 +1061,48 @@ def build_server(ckpt_path: str | None) -> gr.Server:
 
         suffix = Path(audio.filename or "input.wav").suffix or ".wav"
         temp_path: Path | None = None
+        converted_path: Path | None = None
         try:
             data = await audio.read()
+            if not data:
+                return JSONResponse({"error": "Uploaded audio is empty. Please record or upload again."}, status_code=400)
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp.write(data)
                 temp_path = Path(tmp.name)
 
             k = max(1, min(int(top_k), 10))
-            items = predictor.predict(str(temp_path), top_k=k)
+            try:
+                items = predictor.predict(str(temp_path), top_k=k)
+            except Exception:
+                # Some mobile-recorded formats (notably iOS m4a variants) decode more reliably
+                # after explicit ffmpeg normalization to wav/mono.
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_wav:
+                    converted_path = Path(tmp_wav.name)
+                try:
+                    cmd = [
+                        "ffmpeg",
+                        "-y",
+                        "-i",
+                        str(temp_path),
+                        "-ac",
+                        "1",
+                        "-ar",
+                        str(int(predictor.cfg["data"]["sample_rate"])),
+                        str(converted_path),
+                    ]
+                    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                    if proc.returncode != 0:
+                        err_tail = (proc.stderr or "").strip().splitlines()[-1:] or ["ffmpeg decode failed"]
+                        return JSONResponse(
+                            {"error": f"Could not decode this recording format. {err_tail[0]}"},
+                            status_code=400,
+                        )
+                    items = predictor.predict(str(converted_path), top_k=k)
+                except FileNotFoundError:
+                    return JSONResponse(
+                        {"error": "ffmpeg is not installed on server. Install ffmpeg for mobile audio compatibility."},
+                        status_code=500,
+                    )
             payload: list[dict[str, Any]] = []
             for raw, prob in items:
                 info = species_info(raw)
@@ -1107,6 +1142,8 @@ def build_server(ckpt_path: str | None) -> gr.Server:
         finally:
             if temp_path is not None:
                 temp_path.unlink(missing_ok=True)
+            if converted_path is not None:
+                converted_path.unlink(missing_ok=True)
 
     return app
 
