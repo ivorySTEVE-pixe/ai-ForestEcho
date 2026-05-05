@@ -9,12 +9,16 @@ from __future__ import annotations
 import argparse
 import html
 import json
-from datetime import datetime
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import gradio as gr
 import numpy as np
 import torch
+from fastapi import File, Form, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from .features import load_audio
 from .model import ASTSpeciesClassifier
@@ -55,186 +59,172 @@ NATURE_THEME = gr.themes.Soft(
 )
 
 CUSTOM_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;700&family=Noto+Serif+JP:wght@500;700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;700&display=swap');
-#fe-hero {
-  text-align:center;
-  padding: 30px 8px 12px;
-  position: relative;
-}
-#fe-hero h1 {
-  margin:0; font-size:3.3rem; font-weight:700; letter-spacing: 0.2px;
-  font-family: 'Cormorant Garamond', 'Noto Serif JP', serif;
-  background: linear-gradient(115deg,#095d2b 0%,#08b84b 38%,#ffd27a 100%);
-  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-  filter: drop-shadow(0 6px 16px rgba(7,80,36,0.14));
-}
-#fe-hero .tag {
-  margin-top: 8px; font-size: 1.15rem; font-style: italic;
-  font-family: 'Cormorant Garamond', 'Noto Serif JP', serif;
-  color:#3a5736;
-}
-.fe-card {
-  backdrop-filter: blur(12px) saturate(1.08);
-  border: 1px solid rgba(255,255,255,0.35);
-  box-shadow: 0 14px 30px rgba(9,68,33,0.12), inset 0 1px 0 rgba(255,255,255,0.35);
-}
-.fe-input-panel {
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap');
+.gradio-container{max-width:100% !important;padding:0 !important;font-family:'DM Sans',sans-serif !important;background:#f2f5f3 !important;}
+.gradio-container .block,.gradio-container .gr-box,.gradio-container .gr-panel,.gradio-container .gr-form,.gradio-container .gr-group{background:transparent !important;border:none !important;box-shadow:none !important;border-radius:0 !important;}
+.gradio-container .gr-row{gap:20px !important;}
+.gradio-container h3,.gradio-container .markdown h3{margin:0;}
+
+#fe-hero-shell{
   background:
-    radial-gradient(circle at 9% 6%, rgba(114, 255, 174, 0.14), transparent 40%),
-    linear-gradient(165deg, rgba(255,255,255,0.95), rgba(240,255,246,0.86));
-  border: 1px solid rgba(8,184,75,0.22);
-  box-shadow: 0 18px 34px rgba(7,80,36,0.14), inset 0 1px 0 rgba(255,255,255,0.6);
+    linear-gradient(90deg,rgba(7,22,15,.88) 0%,rgba(7,28,20,.7) 52%,rgba(9,32,24,.35) 100%),
+    url('https://images.unsplash.com/photo-1448375240586-882707db888b?q=80&w=2200&auto=format&fit=crop');
+  background-size:cover;background-position:center;
+  min-height:620px;padding:10px 0 28px;
 }
-.gradio-container {
-  max-width: 1440px !important;
-  margin: 0 auto !important;
-  padding: 8px 12px 24px !important;
-  font-family: 'Manrope', 'Noto Sans JP', sans-serif !important;
-  color-scheme: light !important;
+#fe-header{
+  height:68px;border-radius:0;background:rgba(5,19,13,.84);
+  display:grid;grid-template-columns:320px 1fr 190px;align-items:center;
+  gap:18px;padding:0 14px 0 0;margin:0 auto 28px;max-width:1720px;
+  box-shadow:0 10px 24px rgba(0,0,0,.22);
 }
-.gradio-container, body, html {
-  background: #0a120c !important;
+.fe-brand{display:flex;align-items:center;gap:12px;color:#fff;padding-left:8px;}
+.fe-brand .dot{
+  width:48px;height:48px;border-radius:14px;
+  background:linear-gradient(145deg,#237a47,#1a5f39);
+  color:#cff7de;display:inline-flex;align-items:center;justify-content:center;font-size:20px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2), 0 8px 14px rgba(0,0,0,.24);
 }
-.gradio-container .gr-row {
-  display: flex !important;
-  flex-wrap: wrap !important;
-  gap: 12px !important;
+.fe-brand span{font-size:40px;font-weight:700;line-height:1;}
+.fe-brand small{display:block;font-size:12px;color:#82bb97;letter-spacing:.02em;margin-top:2px;}
+.fe-nav{display:flex;gap:34px;justify-content:center;color:#9ec0ab;font-size:18px;font-weight:600;}
+.fe-nav span{padding:4px 0;border-bottom:2px solid transparent;transition:color .16s ease,border-color .16s ease;}
+.fe-nav span:hover{color:#cde8d8;}
+.fe-nav span.active{color:#35c56f;border-bottom-color:#35c56f;}
+.fe-badge{
+  justify-self:end;background:rgba(14,49,31,.7);border:1px solid rgba(66,143,95,.45);color:#34b565;
+  padding:8px 16px;border-radius:24px;font-size:16px;font-weight:700;display:flex;align-items:center;gap:10px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12), 0 6px 12px rgba(0,0,0,.16);
 }
-.gradio-container .gr-column {
-  min-width: 320px;
+.live-dot{width:10px;height:10px;border-radius:50%;background:#3ed27a;display:inline-block;}
+
+#fe-hero-grid{display:grid !important;grid-template-columns:1.35fr 1fr;gap:28px;align-items:start;max-width:1720px;margin:0 auto;}
+#fe-hero-copy{padding-top:66px;max-width:760px;}
+#fe-hero-copy h1{font-family:'DM Serif Display',serif;font-size:80px;line-height:1.02;font-weight:400;color:#ecf7ef;margin:0 0 22px;}
+#fe-hero-copy h1 span{color:#1f8f4f;font-family:'DM Sans',sans-serif;font-weight:700;}
+#fe-hero-copy p{font-size:19px;line-height:1.5;color:#c2d8cd;margin:0 0 32px;max-width:700px;}
+.hero-features{display:flex;gap:28px;flex-wrap:wrap;}
+.hf-item{max-width:210px;color:#c7ddcf;}
+.hf-item b{display:block;color:#f5fff9;font-size:34px;font-weight:700;margin-bottom:2px;}
+.hf-item span{font-size:14px;line-height:1.35;color:#97baaa;}
+
+#fe-upload-card{
+  margin-top:44px;background:#d9e6de;border:1px solid #9ddbb7;border-radius:26px;padding:22px;max-width:560px;justify-self:end;
+  box-shadow:0 18px 28px rgba(4,17,11,.2);
 }
-.gradio-container .block,
-.gradio-container .gr-box,
-.gradio-container .gr-panel,
-.gradio-container .gr-form,
-.gradio-container .gr-group {
-  background: rgba(16, 26, 19, 0.92) !important;
-  border: 1px solid rgba(113, 201, 150, 0.26) !important;
+#fe-upload-card .markdown h3{color:#173024 !important;font-size:40px !important;font-weight:700 !important;}
+.fe-upload-sub{font-size:14px;color:#496f5a;margin:6px 0 16px;}
+#fe-upload-card .gradio-audio{
+  background:#d5e4dc !important;border:2px dashed #93e2ad !important;border-radius:20px !important;
+  min-height:220px;padding:16px;
 }
-.gr-button {
-  border-radius: 10px !important;
-  font-family: 'Manrope', 'Noto Sans JP', sans-serif !important;
-  font-weight: 700 !important;
+#fe-upload-card .gradio-audio *{color:#1f3528 !important;}
+#fe-upload-card .gr-button-primary{
+  margin-top:14px;background:#1b6f3f !important;border:none !important;color:#fff !important;
+  border-radius:14px !important;font-size:18px !important;font-weight:700 !important;padding:12px 16px !important;
+  box-shadow:0 8px 18px rgba(27,111,63,.35);
+  transition:transform .14s ease, box-shadow .14s ease, background .14s ease;
 }
-.gr-button-primary {
-  box-shadow: 0 10px 20px rgba(8,184,75,0.28) !important;
+#fe-upload-card .gr-button-primary:hover{
+  background:#155a32 !important;
+  transform:translateY(-1px);
+  box-shadow:0 12px 22px rgba(21,90,50,.42);
 }
-.gr-form, .gr-group {
-  border-radius: 12px !important;
+.fe-record-row{
+  margin-top:12px;padding:12px 16px;border-radius:18px;border:2px solid #97e1b0;background:#d7e5dc;
+  color:#1d3a2b;font-size:17px;font-weight:700;text-align:center;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55);
 }
-.gradio-container input,
-.gradio-container textarea,
-.gradio-container select {
-  border-radius: 10px !important;
-  border: 1px solid rgba(8,184,75,0.24) !important;
-  background: rgba(248,255,251,0.96) !important;
-  color: #12291a !important;
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
-  font-family: 'Manrope', 'Noto Sans JP', sans-serif !important;
+.fe-local-note{margin-top:10px;text-align:center;color:#4f7a64;font-size:14px;}
+.fe-analysis-msg{margin-top:8px;text-align:center;color:#1a5a35;font-size:14px;min-height:20px;font-weight:600;}
+
+#fe-content{padding:26px 0 18px;background:#f2f5f3;max-width:1720px;margin:0 auto;}
+#fe-mid-wrap{
+  border:2px solid #95deaf;
+  border-radius:34px;
+  padding:28px;
+  background:#d9e8df;
 }
-.gradio-container label,
-.gradio-container .gr-form > label,
-.gradio-container .gr-input-label,
-.gradio-container .gr-block-label {
-  font-family: 'Manrope', 'Noto Sans JP', sans-serif !important;
-  font-weight: 700 !important;
-  color: #d6ebdc !important;
-  background: transparent !important;
-  border: 0 !important;
-  padding: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  display: block !important;
+#fe-mid-wrap .gr-row{align-items:stretch !important;}
+.section-card{
+  background:linear-gradient(155deg,#79df97,#9be9b1);
+  border:2px solid #67d88c;border-radius:24px;padding:26px;min-height:420px;height:100%;
+  box-shadow:0 8px 18px rgba(43,144,83,.18);
 }
-.gradio-container .block {
-  border-radius: 14px !important;
+.section-card h3{font-size:42px;color:#123125;margin:0 0 18px;padding-left:14px;border-left:5px solid #167f44;}
+.steps{display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;gap:8px;align-items:start;}
+.step{text-align:center;}
+.step .ico{width:74px;height:74px;border-radius:18px;border:1px solid #bdebcf;background:#d6f0de;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-weight:700;color:#1f7f47;font-size:28px;}
+.step h4{font-size:17px;margin:0 0 5px;color:#123126;}
+.step p{font-size:14px;color:#38604a;margin:0;line-height:1.45;}
+.arrow{font-size:35px;color:#286745;margin-top:14px;}
+
+#fe-recent-card{
+  background:#d4e5db;border:2px solid #66d58a;border-radius:24px;padding:0 24px 16px;overflow:hidden;min-height:420px;height:100%;
+  box-shadow:0 8px 18px rgba(44,126,79,.16);
 }
-.fe-input-panel .gradio-audio {
-  border: 1px solid rgba(8,184,75,0.22);
-  border-radius: 14px !important;
-  overflow: hidden;
+.rp-cover{height:124px;margin:0 -24px 12px;background:url('https://images.unsplash.com/photo-1444464666168-49d633b86797?q=80&w=1200&auto=format&fit=crop') center/cover no-repeat;opacity:.8;}
+.rp-head{display:flex;justify-content:space-between;align-items:center;margin:0 0 8px;}
+#fe-recent-card h3{font-size:42px;color:#132f24;margin:0;padding-left:14px;border-left:5px solid #1f7b47;}
+.rp-link{font-size:14px;color:#2e7a4f;font-weight:700;}
+.rp-row{display:grid;grid-template-columns:56px 1fr 220px;gap:14px;align-items:center;padding:12px 0;border-top:1px solid #9fdfb8;}
+.rp-row:first-of-type{border-top:none;}
+.rp-avatar{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,#2ca4ff,#1e86de);display:flex;align-items:center;justify-content:center;color:#f5fdff;font-weight:700;font-size:20px;}
+.rp-avatar img{width:100%;height:100%;object-fit:cover;border-radius:12px;}
+.rp-name{font-size:18px;font-weight:700;color:#1a3025;}
+.rp-sci{font-size:15px;color:#4f6f5f;font-style:italic;}
+.rp-right{text-align:right;}
+.rp-pct{font-size:38px;font-weight:700;color:#1f6b41;}
+.rp-time{font-size:14px;color:#6b8477;}
+.rp-bar{height:6px;background:#b7cfc0;border-radius:8px;margin-top:6px;overflow:hidden;}
+.rp-fill{height:100%;background:linear-gradient(90deg,#67be84,#2a7f4a);}
+
+#fe-stats{
+  margin:18px 0 14px;display:grid;grid-template-columns:repeat(4,1fr);gap:16px;
 }
-.gradio-container .gradio-audio {
-  background: rgba(11, 20, 14, 0.9) !important;
+.stat{
+  background:#d5e3db;border:2px solid #93deae;border-radius:26px;padding:22px 24px;text-align:left;
+  box-shadow:0 6px 14px rgba(62,136,90,.14);
 }
-.gradio-container .gr-dataframe table,
-.gradio-container .gr-dataframe th,
-.gradio-container .gr-dataframe td {
-  background: rgba(14, 23, 17, 0.94) !important;
-  color: #e4f2e8 !important;
+.stat b{display:block;font-size:50px;color:#132e22;line-height:1;}
+.stat span{font-size:17px;color:#425c4f;}
+
+#fe-footer{
+  background:linear-gradient(90deg,#051b12,#0a2a1b);color:#d2e8dc;
+  display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:18px;padding:30px 64px;
 }
-.fe-result-row {
-  display:flex; align-items:center; gap:12px; margin:7px 0; padding:12px 13px;
-  border-left:4px solid #08b84b; border-radius:10px;
-  background: linear-gradient(96deg, rgba(255,255,255,0.96), rgba(235,255,244,0.78));
-  box-shadow: 0 4px 14px rgba(7,80,36,0.08);
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
+#fe-footer h4{font-size:38px;margin:0 0 10px;color:#fff;}
+#fe-footer h5{font-size:22px;margin:0 0 10px;color:#9ec3b0;letter-spacing:.05em;text-transform:uppercase;}
+#fe-footer p{margin:0;font-size:14px;line-height:1.62;color:#9ab7a8;}
+
+@media (max-width:1200px){
+  #fe-hero-shell{padding-left:18px;padding-right:18px;}
+  #fe-content{padding-left:18px;padding-right:18px;}
+  #fe-footer{padding-left:18px;padding-right:18px;}
+  #fe-mid-wrap{padding:14px;border-radius:20px;}
+  #fe-hero-grid{grid-template-columns:1fr !important;}
+  #fe-hero-copy{padding-top:24px;}
+  #fe-upload-card{max-width:none;justify-self:stretch;}
+  #fe-header{grid-template-columns:1fr;gap:10px;height:auto;padding:10px;}
+  .fe-nav{justify-content:flex-start;flex-wrap:wrap;gap:16px;}
+  .fe-badge{justify-self:start;}
+  .steps{grid-template-columns:1fr 1fr;}
+  .arrow{display:none;}
+  #fe-stats{grid-template-columns:1fr 1fr;}
+  #fe-footer{grid-template-columns:1fr 1fr;}
 }
-.fe-result-row:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(7,80,36,0.14);
+@media (max-width:720px){
+  #fe-hero-copy h1{font-size:52px;}
+  #fe-content{padding-top:16px;}
+  #fe-stats{grid-template-columns:1fr;}
+  #fe-footer{grid-template-columns:1fr;}
 }
-.fe-result-row .name { flex:1; font-weight:700; color:#0f331d; font-size: 1.02rem; }
-.fe-result-row .meta { font-size:0.79rem; color:#3d6047; margin-top:2px; }
-.fe-result-row .pct { font-weight:700; color:#066a30; width:66px; text-align:right; font-variant-numeric: tabular-nums; }
-.fe-result-row .bar { width:34%; height:8px; border-radius:6px; background:rgba(8,184,75,0.14); overflow:hidden; }
-.fe-result-row .fill {
-  height:100%;
-  background: linear-gradient(90deg,#6beea3,#08b84b,#ffd27a);
-  box-shadow: 0 0 10px rgba(8,184,75,0.3);
-}
-.fe-details {
-  padding: 14px 14px;
-  border-radius: 10px;
-  background: linear-gradient(145deg, rgba(238,249,242,0.95), rgba(230,245,236,0.88));
-  border: 1px solid rgba(8,184,75,0.16);
-}
-.fe-details h4 { margin:0 0 6px; color:#0d3a1d; font-size:1.25rem; }
-.fe-details .sci { color:#375a43; font-style:italic; margin-bottom:8px; }
-.fe-details .line { margin: 4px 0; color:#1f3a29; }
-.fe-empty {
-  text-align:center; padding: 20px 12px; color:#496141;
-  font-style: italic; font-family: 'Cormorant Garamond', 'Noto Serif JP', serif;
-}
-#fe-footer {
-  text-align:center; padding: 18px 0 6px; color:#3f5f47;
-  font-style: italic; font-family: 'Cormorant Garamond', 'Noto Serif JP', serif;
-}
-.meta {
-  color: #406046;
-}
-.fe-input-panel h3 {
-  font-weight: 800 !important;
-  letter-spacing: 0.1px;
-}
-.gradio-container h3,
-.gradio-container h2,
-.gradio-container h1,
-.gradio-container p,
-.gradio-container span,
-.gradio-container div {
-  color: inherit;
-}
-.gradio-container .prose, .gradio-container .markdown, .gradio-container .gr-markdown {
-  color: #dceee1 !important;
-}
-@media (max-width: 980px) {
-  #fe-hero h1 { font-size: 2.5rem; }
-  #fe-hero .tag { font-size: 1.02rem; }
-  .gradio-container { padding: 6px 8px 16px !important; }
-  .gradio-container .gr-column { min-width: 100% !important; }
-  .fe-result-row { gap: 8px; padding: 10px; }
-  .fe-result-row .bar { width: 30%; }
-  .fe-result-row .pct { width: 54px; font-size: 0.92rem; }
-}
-@media (max-width: 640px) {
-  #fe-hero h1 { font-size: 2.1rem; }
-  #fe-hero .tag { font-size: 0.95rem; }
-  .fe-result-row { align-items: flex-start; flex-direction: column; }
-  .fe-result-row .bar { width: 100%; }
-  .fe-result-row .pct { width: auto; align-self: flex-end; }
-  .fe-details h4 { font-size: 1.1rem; }
-}
+"""
+
+IFRAME_CSS = """
+.gradio-container { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+body, html { margin: 0 !important; padding: 0 !important; background: #0a160f !important; }
+#design-frame { width: 100vw; height: 100vh; border: 0; display: block; }
 """
 
 
@@ -670,17 +660,66 @@ def parse_raw_from_option(option: str | None) -> str | None:
     return option.split("::", 1)[1].strip()
 
 
-def hero_html(lang: str) -> str:
+def topbar_html() -> str:
     return (
-        '<div id="fe-hero">'
-        "<h1>ForestEcho</h1>"
-        f'<div class="tag">{t(lang, "tagline")}</div>'
+        '<div id="fe-header">'
+        '<div class="fe-brand"><span class="dot">◉</span><span>ForestEcho</span><small>Local • Private • Accurate</small></div>'
+        '<div class="fe-nav"><span class="active">Home</span><span>About</span><span>Model</span><span>Species</span><span>How It Works</span><span>Contact</span></div>'
+        '<div class="fe-badge"><span class="live-dot"></span>Local Model</div>'
         "</div>"
     )
 
 
-def footer_html(lang: str) -> str:
-    return f'<div id="fe-footer">{t(lang, "footer")}</div>'
+def hero_html(lang: str) -> str:
+    return (
+        '<div id="fe-hero-copy">'
+        '<div style="color:#2fb464;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:14px;margin-bottom:14px;">AI Sound Recognition</div>'
+        '<h1>Identify Animals<br>by Their <span>Sound</span></h1>'
+        "<p>Upload an audio clip and our locally trained AI model will predict the type and species of animal.</p>"
+        '<div class="hero-features">'
+        '<div class="hf-item"><b>100% Local</b><span>Your data stays on device</span></div>'
+        '<div class="hf-item"><b>Privacy First</b><span>No cloud uploads</span></div>'
+        '<div class="hf-item"><b>Wildlife Focus</b><span>50+ species</span></div>'
+        "</div>"
+        "</div>"
+    )
+
+
+def how_it_works_html() -> str:
+    return (
+        '<div class="section-card"><h3>How It Works</h3>'
+        '<div class="steps">'
+        '<div class="step"><div class="ico">1</div><h4>Upload Audio</h4><p>Upload a recording of an animal sound.</p></div>'
+        '<div class="arrow">→</div>'
+        '<div class="step"><div class="ico">2</div><h4>Process Audio</h4><p>The audio is processed and analyzed locally.</p></div>'
+        '<div class="arrow">→</div>'
+        '<div class="step"><div class="ico">3</div><h4>AI Prediction</h4><p>The model predicts animal type and species.</p></div>'
+        '<div class="arrow">→</div>'
+        '<div class="step"><div class="ico">4</div><h4>Get Results</h4><p>See confidence scores and top matches.</p></div>'
+        "</div></div>"
+    )
+
+
+def stats_html() -> str:
+    return (
+        '<div id="fe-stats">'
+        '<div class="stat"><b>50+</b><span>Animal Species</span></div>'
+        '<div class="stat"><b>10,000+</b><span>Audio Samples</span></div>'
+        '<div class="stat"><b>98%</b><span>Model Accuracy</span></div>'
+        '<div class="stat"><b>100%</b><span>Local & Private</span></div>'
+        "</div>"
+    )
+
+
+def footer_html() -> str:
+    return (
+        '<div id="fe-footer">'
+        '<div class="f-col"><h4>ForestEcho</h4><p>Local AI model for animal sound recognition.<br>Built for privacy. Made for wildlife.</p></div>'
+        '<div class="f-col"><h5>Quick Links</h5><p>Home<br>About<br>Model<br>Species<br>How It Works<br>Contact</p></div>'
+        '<div class="f-col"><h5>Model Info</h5><p>Model Type: CNN + Transformer<br>Trained On: Local Wildlife Dataset<br>Running On: Your Device (Local)</p></div>'
+        '<div class="f-col"><p>Made with ❤️ for wildlife<br><br>© 2026 ForestEcho. All rights reserved.</p></div>'
+        "</div>"
+    )
 
 
 class Predictor:
@@ -910,342 +949,164 @@ def history_table(history: list[dict[str, str | float]], lang: str):
     return rows, headers
 
 
-def build_app(ckpt_path: str | None) -> gr.Blocks:
-    predictor = Predictor(ckpt_path)
+HISTORY_PATH = Path("data/history/predictions.jsonl")
 
-    all_classes = predictor.classes if predictor.ready else sorted(SPECIES_DB.keys())
-    default_raw = all_classes[0] if all_classes else None
 
-    def options_for(lang: str, classes: list[str]) -> list[str]:
-        return [species_option(raw, lang) for raw in classes]
+def save_prediction_history(
+    *,
+    raw: str,
+    scientific: str,
+    confidence: float,
+    source_file: str,
+) -> None:
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "raw": raw,
+        "scientific": scientific,
+        "confidence": round(float(confidence), 2),
+        "source_file": source_file,
+    }
+    with open(HISTORY_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    def search_species(query: str, lang: str):
-        q = (query or "").strip().lower()
-        pool = all_classes
-        if q:
-            filtered = []
-            for raw in pool:
-                info = species_info(raw)
-                if (
-                    q in raw.lower()
-                    or q in info["common_en"].lower()
-                    or q in info["common_ja"].lower()
-                    or q in info["scientific"].lower()
-                ):
-                    filtered.append(raw)
-            pool = filtered
-        opts = options_for(lang, pool)
-        if not opts:
-            return gr.update(choices=[], value=None), render_species_details(None, lang), None
-        return gr.update(choices=opts, value=opts[0]), render_species_details(parse_raw_from_option(opts[0]), lang), parse_raw_from_option(opts[0])
 
-    def select_species(option: str | None, lang: str):
-        raw = parse_raw_from_option(option)
-        return render_species_details(raw, lang), raw
-
-    def feedback_status(msg: str) -> str:
-        return f'<div class="meta" style="margin-top:6px;">{html.escape(msg)}</div>'
-
-    def analyze(audio_path, top_k, group_filter, long_audio, hop_seconds, aggregation, unknown_threshold, lang, hist_state):
-        if audio_path is None:
-            return (
-                render_results([], lang, group_filter),
-                "",
-                render_species_details(None, lang),
-                *history_table(hist_state, lang),
-                hist_state,
-                None,
-                audio_path,
-            )
-        if not predictor.ready:
-            return (
-                f'<div class="fe-empty">{t(lang, "empty_untrained")}</div>',
-                "",
-                render_species_details(None, lang),
-                *history_table(hist_state, lang),
-                hist_state,
-                None,
-                audio_path,
-            )
-        try:
-            if long_audio:
-                results = predictor.predict_long(
-                    audio_path,
-                    top_k=int(top_k),
-                    hop_seconds=float(hop_seconds),
-                    aggregation=str(aggregation),
-                )
-            else:
-                results = predictor.predict(audio_path, top_k=int(top_k))
-        except Exception as exc:  # noqa: BLE001
-            err = html.escape(str(exc))
-            return (
-                f'<div class="fe-empty">{t(lang, "err_process", err=err)}</div>',
-                "",
-                render_species_details(None, lang),
-                *history_table(hist_state, lang),
-                hist_state,
-                None,
-                audio_path,
-            )
-
-        top_raw, top_prob = results[0]
-        unknown = top_prob < float(unknown_threshold)
-        top_info = species_info(top_raw)
-        pred_name = t(lang, "unknown_name") if unknown else species_name(top_raw, lang)
-        hist_state = hist_state + [
+def load_prediction_history(limit: int = 10, lang: str = "en") -> list[dict[str, Any]]:
+    if not HISTORY_PATH.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with open(HISTORY_PATH, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                continue
+    rows = rows[-max(1, limit) :][::-1]
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        raw = str(row.get("raw", ""))
+        info = species_info(raw) if raw else fallback_species("unknown")
+        out.append(
             {
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "species": pred_name,
-                "scientific": top_info["scientific"],
-                "conf": top_prob * 100,
+                "ts": row.get("ts"),
+                "raw": raw,
+                "name": info["common_ja"] if lang == "ja" else info["common_en"],
+                "scientific": row.get("scientific", info["scientific"]),
+                "confidence": float(row.get("confidence", 0.0)),
+                "source_file": row.get("source_file", ""),
             }
-        ]
-        return (
-            render_results(results, lang, group_filter),
-            render_unknown_notice(unknown, float(unknown_threshold), lang),
-            render_species_details(None if unknown else top_raw, lang),
-            *history_table(hist_state, lang),
-            hist_state,
-            top_raw,
-            audio_path,
+        )
+    return out
+
+
+def find_frontend_files() -> tuple[Path | None, Path | None]:
+    candidates = [
+        Path("web/ForestEcho.html"),
+        Path("/Users/aankansarkar/Downloads/ForestEcho.html"),
+    ]
+    html_path = next((p for p in candidates if p.exists()), None)
+    if html_path is None:
+        return None, None
+    jsx_path = html_path.parent / "tweaks-panel.jsx"
+    return html_path, jsx_path if jsx_path.exists() else None
+
+
+def build_server(ckpt_path: str | None) -> gr.Server:
+    predictor = Predictor(ckpt_path)
+    html_path, jsx_path = find_frontend_files()
+    app = gr.Server(title="ForestEcho")
+
+    @app.get("/")
+    async def index():
+        if html_path is None:
+            return PlainTextResponse(
+                "ForestEcho.html not found. Place it in ./web or ~/Downloads.",
+                status_code=404,
+            )
+        return FileResponse(html_path)
+
+    @app.get("/tweaks-panel.jsx")
+    async def tweaks_panel():
+        if jsx_path is None:
+            return PlainTextResponse("// tweaks-panel.jsx not found", status_code=404)
+        return FileResponse(jsx_path)
+
+    @app.get("/api/status")
+    async def status():
+        return JSONResponse(
+            {
+                "ready": predictor.ready,
+                "classes": len(predictor.classes),
+                "checkpoint": predictor.ckpt_path,
+            }
         )
 
-    def mark_wrong(
-        correct_option,
-        note,
-        lang,
-        last_pred_raw,
-        last_audio_path,
-        unknown_threshold,
-        aggregation,
-        long_audio,
-        hop_seconds,
+    @app.get("/api/history")
+    async def history_api(limit: int = 10, lang: str = "en"):
+        n = max(1, min(int(limit), 100))
+        return JSONResponse({"ok": True, "history": load_prediction_history(limit=n, lang=lang)})
+
+    @app.post("/api/predict")
+    async def predict_api(
+        audio: UploadFile = File(...),
+        top_k: int = Form(3),
+        lang: str = Form("en"),
     ):
-        correct_raw = parse_raw_from_option(correct_option)
-        if (not last_pred_raw) or (not last_audio_path) or (not correct_raw):
-            return feedback_status(t(lang, "feedback_missing"))
-        rec = {
-            "timestamp": datetime.now().isoformat(),
-            "audio_path": str(last_audio_path),
-            "predicted_raw": str(last_pred_raw),
-            "predicted_name_en": species_name(str(last_pred_raw), "en"),
-            "predicted_name_ja": species_name(str(last_pred_raw), "ja"),
-            "correct_raw": str(correct_raw),
-            "correct_name_en": species_name(str(correct_raw), "en"),
-            "correct_name_ja": species_name(str(correct_raw), "ja"),
-            "note": (note or "").strip(),
-            "settings": {
-                "unknown_threshold": float(unknown_threshold),
-                "aggregation": str(aggregation),
-                "long_audio": bool(long_audio),
-                "hop_seconds": float(hop_seconds),
-            },
-        }
-        save_feedback_record(rec)
-        return feedback_status(t(lang, "feedback_saved"))
+        if not predictor.ready:
+            return JSONResponse({"error": "Model is not loaded."}, status_code=503)
 
-    def toggle_language(current_lang, hist_state, detail_raw):
-        lang = "ja" if current_lang == "en" else "en"
-        rows, headers = history_table(hist_state, lang)
-        return (
-            lang,
-            hero_html(lang),
-            footer_html(lang),
-            gr.update(value=t(lang, "record")),
-            gr.update(value=t(lang, "results")),
-            gr.update(value=t(lang, "species_info")),
-            gr.update(value=t(lang, "dictionary")),
-            gr.update(value=t(lang, "history")),
-            gr.update(value=t(lang, "confusions")),
-            gr.update(value=t(lang, "feedback")),
-            gr.update(label=t(lang, "group_filter"), choices=[(t(lang, "group_all"), "__all__")] + [(g, g) for g in all_groups(all_classes)]),
-            gr.update(label=t(lang, "top_k")),
-            gr.update(label=t(lang, "long_audio")),
-            gr.update(label=t(lang, "hop_seconds")),
-            gr.update(label=t(lang, "aggregation")),
-            gr.update(label=t(lang, "unknown_threshold")),
-            gr.update(value=t(lang, "analyze")),
-            gr.update(value=t(lang, "lang")),
-            gr.update(label=t(lang, "search")),
-            gr.update(label=t(lang, "select"), choices=options_for(lang, all_classes)),
-            gr.update(label=t(lang, "correct_label"), choices=options_for(lang, all_classes)),
-            gr.update(label=t(lang, "feedback_note")),
-            gr.update(value=t(lang, "mark_wrong")),
-            status_html(predictor, lang),
-            latest_confusion_insights(all_classes, lang),
-            feedback_status(t(lang, "feedback_status_empty")),
-            "",
-            render_species_details(detail_raw, lang),
-            rows,
-            gr.update(headers=headers),
-        )
+        suffix = Path(audio.filename or "input.wav").suffix or ".wav"
+        temp_path: Path | None = None
+        try:
+            data = await audio.read()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(data)
+                temp_path = Path(tmp.name)
 
-    with gr.Blocks(title="ForestEcho") as app:
-        lang_state = gr.State("en")
-        history_state = gr.State([])
-        detail_raw_state = gr.State(default_raw)
-        last_pred_raw_state = gr.State(None)
-        last_audio_path_state = gr.State(None)
-
-        with gr.Row():
-            lang_btn = gr.Button(t("en", "lang"), size="sm", scale=0, min_width=110)
-
-        hero = gr.HTML(hero_html("en"))
-
-        with gr.Row():
-            with gr.Column(scale=1, elem_classes=["fe-card", "fe-input-panel"]):
-                section_record = gr.Markdown(t("en", "record"))
-                audio = gr.Audio(
-                    sources=["upload", "microphone"],
-                    type="filepath",
-                    show_label=False,
-                    waveform_options=gr.WaveformOptions(
-                        waveform_color="#08b84b",
-                        waveform_progress_color="#ff7a59",
-                        show_recording_waveform=True,
-                    ),
-                )
-                top_k = gr.Slider(1, 10, value=5, step=1, label=t("en", "top_k"))
-                long_audio = gr.Checkbox(label=t("en", "long_audio"), value=True)
-                hop_seconds = gr.Slider(0.5, 5.0, value=1.5, step=0.5, label=t("en", "hop_seconds"))
-                aggregation = gr.Dropdown(
-                    label=t("en", "aggregation"),
-                    choices=["mean", "max", "vote"],
-                    value="mean",
-                    interactive=True,
-                )
-                unknown_threshold = gr.Slider(0.05, 0.95, value=0.35, step=0.05, label=t("en", "unknown_threshold"))
-                analyze_btn = gr.Button(t("en", "analyze"), variant="primary", size="lg")
-                status = gr.HTML(status_html(predictor, "en"))
-
-            with gr.Column(scale=1, elem_classes="fe-card"):
-                section_results = gr.Markdown(t("en", "results"))
-                group_filter = gr.Dropdown(
-                    label=t("en", "group_filter"),
-                    choices=[(t("en", "group_all"), "__all__")] + [(g, g) for g in all_groups(all_classes)],
-                    value="__all__",
-                    interactive=True,
-                )
-                results_html = gr.HTML(render_results([], "en", "__all__"))
-                unknown_notice = gr.HTML("")
-                section_species_info = gr.Markdown(t("en", "species_info"))
-                detail_html = gr.HTML(render_species_details(default_raw, "en"))
-
-        with gr.Row():
-            with gr.Column(scale=1, elem_classes="fe-card"):
-                section_dictionary = gr.Markdown(t("en", "dictionary"))
-                search_box = gr.Textbox(label=t("en", "search"), placeholder="crow / Corvus / petpet_song")
-                species_select = gr.Dropdown(
-                    label=t("en", "select"),
-                    choices=options_for("en", all_classes),
-                    value=species_option(default_raw, "en") if default_raw else None,
-                    interactive=True,
-                )
-            with gr.Column(scale=1, elem_classes="fe-card"):
-                section_confusions = gr.Markdown(t("en", "confusions"))
-                confusion_html = gr.HTML(latest_confusion_insights(all_classes, "en"))
-            with gr.Column(scale=1, elem_classes="fe-card"):
-                section_feedback = gr.Markdown(t("en", "feedback"))
-                correct_species_select = gr.Dropdown(
-                    label=t("en", "correct_label"),
-                    choices=options_for("en", all_classes),
-                    value=species_option(default_raw, "en") if default_raw else None,
-                    interactive=True,
-                )
-                feedback_note = gr.Textbox(label=t("en", "feedback_note"), placeholder="e.g. wind + distant call overlap")
-                mark_wrong_btn = gr.Button(t("en", "mark_wrong"), variant="secondary")
-                feedback_status_html = gr.HTML(feedback_status(t("en", "feedback_status_empty")))
-            with gr.Column(scale=1, elem_classes="fe-card"):
-                section_history = gr.Markdown(t("en", "history"))
-                history_rows, history_headers = history_table([], "en")
-                history_df = gr.Dataframe(
-                    headers=history_headers,
-                    value=history_rows,
-                    row_count=(8, "dynamic"),
-                    col_count=(4, "fixed"),
-                    interactive=False,
-                    wrap=True,
+            k = max(1, min(int(top_k), 10))
+            items = predictor.predict(str(temp_path), top_k=k)
+            payload: list[dict[str, Any]] = []
+            for raw, prob in items:
+                info = species_info(raw)
+                local_name = info["common_ja"] if lang == "ja" else info["common_en"]
+                desc = info["desc_ja"] if lang == "ja" else info["desc_en"]
+                payload.append(
+                    {
+                        "raw": raw,
+                        "name": local_name,
+                        "scientific": info["scientific"],
+                        "group": info["group"],
+                        "description": desc,
+                        "confidence": round(float(prob) * 100.0, 2),
+                        "wiki": info["wiki"],
+                    }
                 )
 
-        footer = gr.HTML(footer_html("en"))
+            if payload:
+                top = payload[0]
+                save_prediction_history(
+                    raw=str(top["raw"]),
+                    scientific=str(top["scientific"]),
+                    confidence=float(top["confidence"]),
+                    source_file=audio.filename or "recorded_audio",
+                )
 
-        analyze_btn.click(
-            analyze,
-            inputs=[audio, top_k, group_filter, long_audio, hop_seconds, aggregation, unknown_threshold, lang_state, history_state],
-            outputs=[results_html, unknown_notice, detail_html, history_df, history_df, history_state, last_pred_raw_state, last_audio_path_state],
-        )
-        audio.change(
-            analyze,
-            inputs=[audio, top_k, group_filter, long_audio, hop_seconds, aggregation, unknown_threshold, lang_state, history_state],
-            outputs=[results_html, unknown_notice, detail_html, history_df, history_df, history_state, last_pred_raw_state, last_audio_path_state],
-        )
-        group_filter.change(
-            analyze,
-            inputs=[audio, top_k, group_filter, long_audio, hop_seconds, aggregation, unknown_threshold, lang_state, history_state],
-            outputs=[results_html, unknown_notice, detail_html, history_df, history_df, history_state, last_pred_raw_state, last_audio_path_state],
-        )
-        search_box.change(
-            search_species,
-            inputs=[search_box, lang_state],
-            outputs=[species_select, detail_html, detail_raw_state],
-        )
-        species_select.change(
-            select_species,
-            inputs=[species_select, lang_state],
-            outputs=[detail_html, detail_raw_state],
-        )
-        mark_wrong_btn.click(
-            mark_wrong,
-            inputs=[
-                correct_species_select,
-                feedback_note,
-                lang_state,
-                last_pred_raw_state,
-                last_audio_path_state,
-                unknown_threshold,
-                aggregation,
-                long_audio,
-                hop_seconds,
-            ],
-            outputs=[feedback_status_html],
-        )
-        lang_btn.click(
-            toggle_language,
-            inputs=[lang_state, history_state, detail_raw_state],
-            outputs=[
-                lang_state,
-                hero,
-                footer,
-                section_record,
-                section_results,
-                section_species_info,
-                section_dictionary,
-                section_history,
-                section_confusions,
-                section_feedback,
-                group_filter,
-                top_k,
-                long_audio,
-                hop_seconds,
-                aggregation,
-                unknown_threshold,
-                analyze_btn,
-                lang_btn,
-                search_box,
-                species_select,
-                correct_species_select,
-                feedback_note,
-                mark_wrong_btn,
-                status,
-                confusion_html,
-                feedback_status_html,
-                unknown_notice,
-                detail_html,
-                history_df,
-                history_df,
-            ],
-        )
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "ready": True,
+                    "predictions": payload,
+                    "top": payload[0] if payload else None,
+                }
+            )
+        except Exception as exc:
+            return JSONResponse({"error": f"Prediction failed: {exc}"}, status_code=500)
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
 
     return app
 
@@ -1258,13 +1119,11 @@ def main() -> None:
     parser.add_argument("--share", action="store_true")
     args = parser.parse_args()
 
-    app = build_app(args.ckpt)
+    app = build_server(args.ckpt)
     app.launch(
         server_name=args.host,
         server_port=args.port,
         share=args.share,
-        theme=NATURE_THEME,
-        css=CUSTOM_CSS,
     )
 
 

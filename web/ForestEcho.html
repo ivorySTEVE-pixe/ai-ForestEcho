@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForestEcho — Animal Sound Recognition</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #ecfdf5;
+    color: #1a2e22;
+    overflow-x: hidden;
+  }
+  :root {
+    --emerald: #22c55e;
+    --emerald-dark: #16a34a;
+    --emerald-deep: #064e2e;
+    --teal: #0d9488;
+    --forest: #0d1f17;
+    --forest-mid: #132d20;
+    --white: #f9fdf9;
+    --card-bg: #ecfdf5;
+    --border: #e2ede7;
+    --text-muted: #5a7a66;
+  }
+</style>
+</head>
+<body>
+
+<script type="text/babel">
+
+
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ─── TWEAKS DEFAULTS ─── */
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#266d40",
+  "darkHeader": true,
+  "showWaveform": true,
+  "confidenceScore": 90,
+  "topAnimal": "Common Chaffinch",
+  "topSpecies": "Fringilla coelebs",
+  "roundness": 22
+} /*EDITMODE-END*/;
+
+/* ─── WAVEFORM ─── */
+function Waveform({ playing, color = "#22c55e", barCount = 64 }) {
+  const [bars] = useState(() =>
+  Array.from({ length: barCount }, () => 0.2 + Math.random() * 0.8)
+  );
+  const [progress, setProgress] = useState(0.38);
+  const raf = useRef();
+  const startRef = useRef(null);
+
+  useEffect(() => {
+    if (playing) {
+      const step = (ts) => {
+        if (!startRef.current) startRef.current = ts;
+        const elapsed = (ts - startRef.current) / 8000;
+        setProgress((p) => {
+          const next = p + 0.002;
+          return next > 1 ? 0 : next;
+        });
+        raf.current = requestAnimationFrame(step);
+      };
+      raf.current = requestAnimationFrame(step);
+    } else {
+      cancelAnimationFrame(raf.current);
+      startRef.current = null;
+    }
+    return () => cancelAnimationFrame(raf.current);
+  }, [playing]);
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 2, height: 48, padding: "0 4px" }}>
+      {bars.map((h, i) => {
+        const past = i / barCount < progress;
+        return (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              height: `${h * 100}%`,
+              borderRadius: 2,
+              background: past ? color : "#d1fae5",
+              transition: "background 0.1s"
+            }} />);
+
+
+      })}
+    </div>);
+
+}
+
+/* ─── AUDIO PLAYER ─── */
+function AudioPlayer({ tweaks, fileName = "forest_birds_morning.wav" }) {
+  const [playing, setPlaying] = useState(false);
+  const accent = tweaks.accentColor;
+
+  return (
+    <div style={{
+      background: "#f0fdf4",
+      border: "1.5px solid #bbf7d0",
+      borderRadius: tweaks.roundness,
+      padding: "14px 18px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 10
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: "50%",
+            background: accent, boxShadow: `0 0 6px ${accent}`
+          }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#1a2e22" }}>{fileName}</span>
+        </div>
+        <span style={{ fontSize: 12, color: "#5a7a66" }}>0:38 / 1:42</span>
+      </div>
+
+      {tweaks.showWaveform && <Waveform playing={playing} color={accent} />}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button
+          onClick={() => setPlaying((p) => !p)}
+          style={{
+            width: 36, height: 36, borderRadius: "50%",
+            background: accent, border: "none", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: `0 4px 12px ${accent}55`,
+            transition: "transform 0.15s, box-shadow 0.15s"
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.08)"}
+          onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}>
+          
+          {playing ?
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="white">
+              <rect x="1" y="1" width="4" height="10" rx="1" />
+              <rect x="7" y="1" width="4" height="10" rx="1" />
+            </svg> :
+
+          <svg width="12" height="14" viewBox="0 0 10 12" fill="white">
+              <path d="M1 1l8 5-8 5z" />
+            </svg>
+          }
+        </button>
+        <div style={{ flex: 1, height: 4, background: "#d1fae5", borderRadius: 2, position: "relative" }}>
+          <div style={{ width: "38%", height: "100%", background: accent, borderRadius: 2 }} />
+          <div style={{
+            position: "absolute", left: "calc(38% - 6px)", top: "50%", transform: "translateY(-50%)",
+            width: 12, height: 12, borderRadius: "50%", background: accent,
+            boxShadow: `0 0 0 3px white, 0 0 0 4px ${accent}`
+          }} />
+        </div>
+        <button style={{
+          background: "none", border: "1.5px solid #bbf7d0", borderRadius: 8,
+          padding: "4px 10px", fontSize: 12, color: "#16a34a", cursor: "pointer",
+          fontFamily: "DM Sans"
+        }}>1×</button>
+      </div>
+    </div>);
+
+}
+
+/* ─── CONFIDENCE BAR ─── */
+function ConfidenceBar({ pct, color = "#22c55e", tweaks }) {
+  const [animated, setAnimated] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setAnimated(pct), 300);
+    return () => clearTimeout(t);
+  }, [pct]);
+  return (
+    <div style={{ flex: 1, height: 6, background: "#e2ede7", borderRadius: 3 }}>
+      <div style={{
+        height: "100%", width: `${animated}%`, borderRadius: 3,
+        background: `linear-gradient(90deg, ${color}99, ${color})`,
+        transition: "width 0.8s cubic-bezier(.4,0,.2,1)"
+      }} />
+    </div>);
+
+}
+
+/* ─── RESULTS PANEL ─── */
+function ResultsPanel({ tweaks, predictions = [] }) {
+  const accent = tweaks.accentColor;
+  const top = predictions[0] || null;
+  const confidence = top ? Math.round(top.confidence) : tweaks.confidenceScore;
+  const topAnimal = top ? top.name : tweaks.topAnimal;
+  const topSpecies = top ? top.scientific : tweaks.topSpecies;
+  const others = predictions.slice(1, 3).map((item) => ({
+    name: item.name,
+    species: item.scientific,
+    pct: Math.round(item.confidence),
+    icon: "🐦",
+  }));
+
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* Top result */}
+      <div style={{
+        borderRadius: tweaks.roundness + 4,
+        background: `linear-gradient(135deg, #064e2e 0%, #065f46 45%, #047857 100%)`,
+        padding: "28px 28px 24px",
+        position: "relative",
+        overflow: "hidden",
+        boxShadow: "0 8px 32px #064e2e44"
+      }}>
+        {/* bg texture */}
+        <div style={{
+          position: "absolute", inset: 0, opacity: 0.08,
+          backgroundImage: "radial-gradient(circle at 80% 20%, #86efac 0%, transparent 60%)"
+        }} />
+        <div style={{ position: "relative", display: "flex", alignItems: "flex-start", gap: 20 }}>
+          <div style={{
+            width: 72, height: 72, borderRadius: tweaks.roundness,
+            overflow: "hidden", flexShrink: 0,
+            border: "2.5px solid #22c55e66",
+            boxShadow: "0 4px 16px #00000044"
+          }}>
+            <img
+              src="https://images.unsplash.com/photo-1774984654175-1c637766cd00?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=200"
+              alt="Bird"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{
+                background: accent, color: "#fff",
+                fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+                padding: "2px 8px", borderRadius: 20, textTransform: "uppercase"
+              }}>Top Match</span>
+              <span style={{
+                background: "#ffffff22", color: "#bbf7d0",
+                fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20
+              }}>Bird</span>
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: "#fff", lineHeight: 1.2 }}>
+              {topAnimal}
+            </div>
+            <div style={{ fontSize: 13, color: "#86efac", fontStyle: "italic", marginTop: 2 }}>
+              {topSpecies}
+            </div>
+          </div>
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
+            <div style={{ fontSize: 40, fontWeight: 800, color: "#fff", lineHeight: 1 }}>
+              {confidence}%
+            </div>
+            <div style={{ fontSize: 11, color: "#86efac", marginTop: 2 }}>confidence</div>
+          </div>
+        </div>
+
+        {/* confidence bar */}
+        <div style={{ marginTop: 20, position: "relative" }}>
+          <div style={{ height: 8, background: "#ffffff22", borderRadius: 4 }}>
+            <div style={{
+              height: "100%", borderRadius: 4,
+              width: `${confidence}%`,
+              background: `linear-gradient(90deg, #86efac, ${accent})`,
+              transition: "width 1s cubic-bezier(.4,0,.2,1)",
+              boxShadow: `0 0 12px ${accent}88`
+            }} />
+          </div>
+          <div style={{
+            display: "flex", justifyContent: "space-between",
+            marginTop: 6, fontSize: 11, color: "#86efac88"
+          }}>
+            <span>0%</span><span>50%</span><span>100%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Other predictions */}
+      <div style={{
+        background: "#f0fdf4", borderRadius: tweaks.roundness,
+        border: "1.5px solid #bbf7d0",
+        overflow: "hidden"
+      }}>
+        <div style={{
+          padding: "12px 20px", borderBottom: "1px solid #e2ede7",
+          fontSize: 12, fontWeight: 600, color: "#5a7a66", letterSpacing: "0.06em",
+          textTransform: "uppercase"
+        }}>
+          Other Predictions
+        </div>
+        {others.length === 0 &&
+        <div style={{ padding: "16px 20px", fontSize: 12, color: "#5a7a66" }}>
+            Run analysis to view top-3 model matches.
+          </div>
+        }
+        {others.map((item, i) =>
+        <div
+          key={i}
+          style={{
+            display: "flex", alignItems: "center", gap: 14,
+            padding: "12px 20px",
+            borderBottom: i < others.length - 1 ? "1px solid #f0f7f2" : "none",
+            transition: "background 0.15s",
+            cursor: "pointer"
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = "#f0fdf4"}
+          onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+          
+            <div style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 18, flexShrink: 0,
+            border: "1.5px solid #bbf7d0"
+          }}>
+              {item.icon}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#1a2e22" }}>{item.name}</div>
+              <div style={{ fontSize: 11, color: "#5a7a66", fontStyle: "italic" }}>{item.species}</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, width: 140 }}>
+              <ConfidenceBar pct={item.pct} color={accent} tweaks={tweaks} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#16a34a", width: 36, textAlign: "right" }}>
+                {item.pct}%
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Tags */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {["Passerine", "Forest Habitat", "Morning Song", "Europe"].map((tag) =>
+        <span key={tag} style={{
+          background: "#f0fdf4", border: "1.5px solid #bbf7d0",
+          color: "#16a34a", fontSize: 12, fontWeight: 500,
+          padding: "4px 12px", borderRadius: 20
+        }}>{tag}</span>
+        )}
+      </div>
+    </div>);
+
+}
+
+/* ─── UPLOAD CARD ─── */
+function UploadCard({ tweaks, onFileLoaded }) {
+  const [dragging, setDragging] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [fileName, setFileName] = useState("forest_birds_morning.wav");
+  const fileInputRef = useRef(null);
+  const accent = tweaks.accentColor;
+
+  const setFromFile = (file) => {
+    if (!file) return;
+    setFileName(file.name || "recorded_audio.webm");
+    setLoaded(true);
+    onFileLoaded(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer?.files?.[0];
+    setFromFile(file);
+  };
+
+  return (
+    <div
+      onDragOver={(e) => {e.preventDefault();setDragging(true);}}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
+      style={{
+        border: `2px dashed ${dragging ? accent : loaded ? accent : "#bbf7d0"}`,
+        borderRadius: tweaks.roundness,
+        background: dragging ? "#dcfce7" : loaded ? "#dcfce7" : "#f0fdf4",
+        padding: "32px 24px",
+        textAlign: "center",
+        transition: "all 0.2s",
+        cursor: "pointer"
+      }}
+      onClick={() => fileInputRef.current?.click()}>
+      
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".wav,.mp3,.m4a,.flac,.ogg,.webm,audio/*"
+        style={{ display: "none" }}
+        onChange={(e) => setFromFile(e.target.files?.[0])} />
+      
+      {loaded ?
+      <>
+          <div style={{
+          width: 48, height: 48, borderRadius: "50%",
+          background: "#dcfce7", display: "flex", alignItems: "center",
+          justifyContent: "center", margin: "0 auto 12px"
+        }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <polyline points="20 6 9 17 4 12" stroke={accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#16a34a" }}>{fileName}</div>
+          <div style={{ fontSize: 12, color: "#5a7a66", marginTop: 4 }}>Loaded and ready for analysis</div>
+        </> :
+
+      <>
+          <div style={{
+          width: 52, height: 52, borderRadius: "50%",
+          background: "#dcfce7", display: "flex", alignItems: "center",
+          justifyContent: "center", margin: "0 auto 14px"
+        }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke={accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#1a2e22" }}>Drop your audio file here</div>
+          <div style={{ fontSize: 12, color: "#5a7a66", margin: "6px 0 14px" }}>WAV, MP3, M4A, FLAC up to 50MB</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
+            <div style={{ height: 1, width: 40, background: "#d1fae5" }} />
+            <span style={{ fontSize: 12, color: "#86a892" }}>or</span>
+            <div style={{ height: 1, width: 40, background: "#d1fae5" }} />
+          </div>
+          <button style={{
+          marginTop: 14, background: accent, color: "#fff",
+          border: "none", borderRadius: tweaks.roundness - 4,
+          padding: "9px 24px", fontSize: 13, fontWeight: 600,
+          cursor: "pointer", fontFamily: "DM Sans",
+          boxShadow: `0 4px 14px ${accent}55`
+        }}>Browse Files</button>
+        </>
+      }
+    </div>);
+
+}
+
+/* ─── RECORD BUTTON ─── */
+function RecordButton({ tweaks, onRecorded, lang = "en" }) {
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const timerRef = useRef();
+  const mediaRecorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const chunksRef = useRef([]);
+
+  useEffect(() => {
+    if (recording) {
+      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+    } else {
+      clearInterval(timerRef.current);
+      setSeconds(0);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [recording]);
+
+  const stopCapture = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const toggleRecording = async () => {
+    if (recording) {
+      setRecording(false);
+      stopCapture();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const mime = recorder.mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: mime });
+        const ext = mime.includes("ogg") ? "ogg" : "webm";
+        const file = new File([blob], `recorded-${Date.now()}.${ext}`, { type: mime });
+        onRecorded(file);
+      };
+      recorder.start();
+      setRecording(true);
+    } catch (err) {
+      alert("Microphone permission is required to record audio.");
+    }
+  };
+
+  const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+  return (
+    <button
+      onClick={toggleRecording}
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+        width: "100%", padding: "12px",
+        background: recording ? "#fef2f2" : "#f0fdf4",
+        border: `1.5px solid ${recording ? "#fca5a5" : "#bbf7d0"}`,
+        borderRadius: tweaks.roundness - 4,
+        cursor: "pointer", fontFamily: "DM Sans",
+        transition: "all 0.2s"
+      }}>
+      
+      <div style={{
+        width: 32, height: 32, borderRadius: "50%",
+        background: recording ? "#ef4444" : "#f0fdf4",
+        border: `2px solid ${recording ? "#ef4444" : "#bbf7d0"}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        position: "relative",
+        boxShadow: recording ? "0 0 0 4px #fca5a533, 0 0 0 8px #ef444422" : "none",
+        transition: "all 0.3s"
+      }}>
+        {recording ?
+        <div style={{ width: 10, height: 10, background: "#fff", borderRadius: 2 }} /> :
+
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <rect x="9" y="2" width="6" height="13" rx="3" fill="#22c55e" />
+            <path d="M5 10a7 7 0 0014 0M12 21v-4M8 21h8" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        }
+      </div>
+      <span style={{ fontSize: 14, fontWeight: 600, color: recording ? "#ef4444" : "#1a2e22" }}>
+        {recording ? `${lang === "ja" ? "録音中…" : "Recording…"} ${fmt(seconds)}` : lang === "ja" ? "ライブ録音" : "Record Live Audio"}
+      </span>
+      {recording &&
+      <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+          {[1, 0.6, 0.9, 0.4, 0.7].map((h, i) =>
+        <div key={i} style={{
+          width: 3, height: `${h * 16}px`, background: "#ef4444",
+          borderRadius: 2,
+          animation: "pulse-bar 0.6s ease-in-out infinite alternate",
+          animationDelay: `${i * 0.12}s`
+        }} />
+        )}
+        </div>
+      }
+    </button>);
+
+}
+
+/* ─── MAIN APP ─── */
+const UI_TEXT = {
+  en: {
+    home: "Home",
+    about: "About",
+    model: "Model",
+    species: "Species",
+    how: "How It Works",
+    contact: "Contact",
+    aiTag: "AI Sound Recognition",
+    heroTitleA: "Identify Animals",
+    heroTitleB: "by Their",
+    heroTitleC: "Sound",
+    heroDesc: "Upload an audio clip and our locally trained AI model will predict the type and species of animal.",
+    uploadTitle: "Upload Audio",
+    uploadFormats: "Supported formats: WAV, MP3, M4A, FLAC",
+    analyze: "Analyze Audio",
+    analyzing: "Analyzing…",
+    localNote: "Prediction runs locally on your device",
+    analysisResults: "Analysis Results",
+    fileAnalyzed: "file analyzed",
+    recentPredictions: "Recent Predictions",
+    viewAllHistory: "View All History →",
+    noHistory: "No real predictions yet. Analyze audio to build history.",
+    langToggle: "日本語",
+  },
+  ja: {
+    home: "ホーム",
+    about: "概要",
+    model: "モデル",
+    species: "種",
+    how: "使い方",
+    contact: "お問い合わせ",
+    aiTag: "AI 音声認識",
+    heroTitleA: "動物の声から",
+    heroTitleB: "種類を",
+    heroTitleC: "識別",
+    heroDesc: "音声をアップロードすると、ローカル学習済みAIモデルが動物の種類を推定します。",
+    uploadTitle: "音声アップロード",
+    uploadFormats: "対応形式: WAV, MP3, M4A, FLAC",
+    analyze: "音声を解析",
+    analyzing: "解析中…",
+    localNote: "推論はこの端末内で実行されます",
+    analysisResults: "解析結果",
+    fileAnalyzed: "ファイル解析済み",
+    recentPredictions: "最近の予測",
+    viewAllHistory: "履歴を表示 →",
+    noHistory: "まだ履歴がありません。音声を解析すると表示されます。",
+    langToggle: "English",
+  },
+};
+
+function App() {
+  const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [lang, setLang] = useState("en");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [fileLoaded, setFileLoaded] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzed, setAnalyzed] = useState(false);
+  const [activeNav, setActiveNav] = useState(UI_TEXT.en.home);
+  const [predictions, setPredictions] = useState([]);
+  const [historyItems, setHistoryItems] = useState([]);
+  const accent = tweaks.accentColor;
+  const t = UI_TEXT[lang];
+
+  useEffect(() => {
+    setActiveNav(UI_TEXT[lang].home);
+  }, [lang]);
+
+  const refreshHistory = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/history?limit=8&lang=${lang}`);
+      const data = await response.json();
+      if (!response.ok || !data.ok) return;
+      setHistoryItems(Array.isArray(data.history) ? data.history : []);
+    } catch (_err) {}
+  }, [lang]);
+
+  useEffect(() => {
+    refreshHistory();
+  }, [refreshHistory]);
+
+  const prettyAge = (isoTs) => {
+    if (!isoTs) return "";
+    const when = new Date(isoTs);
+    const diffSec = Math.max(0, Math.floor((Date.now() - when.getTime()) / 1000));
+    if (diffSec < 60) return lang === "ja" ? `${diffSec}秒前` : `${diffSec}s ago`;
+    const min = Math.floor(diffSec / 60);
+    if (min < 60) return lang === "ja" ? `${min}分前` : `${min} min ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return lang === "ja" ? `${hr}時間前` : `${hr} hr ago`;
+    const day = Math.floor(hr / 24);
+    return lang === "ja" ? `${day}日前` : `${day} day ago`;
+  };
+
+  const handleFileLoaded = (file) => {
+    setSelectedFile(file);
+    setFileLoaded(Boolean(file));
+    setAnalyzed(false);
+  };
+
+  const handleAnalyze = async () => {
+    if (!selectedFile) return;
+    setAnalyzing(true);
+    try {
+      const formData = new FormData();
+      formData.append("audio", selectedFile);
+      formData.append("top_k", "3");
+      formData.append("lang", lang);
+      const response = await fetch("/api/predict", { method: "POST", body: formData });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Prediction failed");
+      }
+      setPredictions(Array.isArray(data.predictions) ? data.predictions : []);
+      if (data.top) {
+        setTweak("topAnimal", data.top.name || tweaks.topAnimal);
+        setTweak("topSpecies", data.top.scientific || tweaks.topSpecies);
+        setTweak("confidenceScore", Math.round(data.top.confidence || tweaks.confidenceScore));
+      }
+      setAnalyzed(true);
+      refreshHistory();
+    } catch (err) {
+      alert(`Analyze failed: ${err.message || err}`);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const navItems = [t.home, t.about, t.model, t.species, t.how, t.contact];
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#ecfdf5" }}>
+      <style>{`
+        @keyframes pulse-bar {
+          from { transform: scaleY(0.5); }
+          to { transform: scaleY(1); }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes pulse-ring {
+          0% { box-shadow: 0 0 0 0 ${accent}44; }
+          100% { box-shadow: 0 0 0 10px transparent; }
+        }
+        @keyframes fade-slide-up {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .results-enter { animation: fade-slide-up 0.5s ease forwards; }
+        @keyframes forest-pan {
+          0%   { background-position: 40% 30%; background-size: 120%; }
+          50%  { background-position: 55% 40%; background-size: 130%; }
+          100% { background-position: 60% 50%; background-size: 125%; }
+        }
+        @keyframes ray-pulse {
+          0%   { opacity: 0.6; }
+          100% { opacity: 1; }
+        }
+        @keyframes leaf-fall {
+          0%   { transform: translateY(-40px) translateX(0px) rotate(0deg); opacity: 0; }
+          10%  { opacity: 0.7; }
+          80%  { opacity: 0.5; }
+          100% { transform: translateY(320px) translateX(40px) rotate(180deg); opacity: 0; }
+        }
+        @keyframes leaf-fall2 {
+          0%   { transform: translateY(-40px) translateX(0px) rotate(30deg); opacity: 0; }
+          10%  { opacity: 0.6; }
+          80%  { opacity: 0.4; }
+          100% { transform: translateY(280px) translateX(-30px) rotate(-120deg); opacity: 0; }
+        }
+        @keyframes float-up {
+          0%   { transform: translateY(0px) scale(1); opacity: 0.25; }
+          50%  { transform: translateY(-12px) scale(1.04); opacity: 0.4; }
+          100% { transform: translateY(0px) scale(1); opacity: 0.25; }
+        }
+        @keyframes shimmer-bg {
+          0%   { background-position: 0% 50%; }
+          50%  { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        .nature-panel {
+          position: relative; overflow: hidden;
+        }
+        .nature-panel::before {
+          content: '';
+          position: absolute; inset: 0; z-index: 0;
+          background: linear-gradient(135deg, #bbf7d0 0%, #86efac 40%, #d1fae5 70%, #a7f3d0 100%);
+          background-size: 300% 300%;
+          animation: shimmer-bg 8s ease infinite;
+        }
+        .nature-panel > * { position: relative; z-index: 1; }
+        .leaf {
+          position: absolute; pointer-events: none; z-index: 2;
+          width: 14px; height: 14px; opacity: 0;
+        }
+      `}</style>
+
+      {/* ── HEADER ── */}
+      <header style={{
+        background: tweaks.darkHeader ? "#0d1f17" : "#ecfdf5",
+        borderBottom: tweaks.darkHeader ? "none" : "1px solid #e2ede7",
+        position: "sticky", top: 0, zIndex: 100,
+        boxShadow: "0 2px 20px #00000022"
+      }}>
+        <div style={{
+          maxWidth: 1400, margin: "0 auto",
+          display: "flex", alignItems: "center",
+          padding: "0 32px", height: 60
+        }}>
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 48 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: accent,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: `0 0 16px ${accent}66`
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M3 18v-6a9 9 0 0118 0v6" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                <path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3v5zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3v5z" fill="white" />
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: tweaks.darkHeader ? "#fff" : "#1a2e22", lineHeight: 1 }}>ForestEcho</div>
+              <div style={{ fontSize: 10, color: tweaks.darkHeader ? "#5a9a70" : "#86a892", lineHeight: 1, marginTop: 2 }}>Local · Private · Accurate</div>
+            </div>
+          </div>
+
+          {/* Nav */}
+          <nav style={{ display: "flex", gap: 4, flex: 1 }}>
+            {navItems.map((item) =>
+            <button key={item} onClick={() => setActiveNav(item)} style={{
+              background: "none", border: "none",
+              padding: "8px 14px", cursor: "pointer",
+              fontSize: 14, fontWeight: activeNav === item ? 600 : 400,
+              color: activeNav === item ? accent : tweaks.darkHeader ? "#a0c4aa" : "#5a7a66",
+              borderBottom: activeNav === item ? `2px solid ${accent}` : "2px solid transparent",
+              fontFamily: "DM Sans",
+              transition: "color 0.15s"
+            }}>
+                {item}
+              </button>
+            )}
+          </nav>
+
+          {/* Status badge */}
+          <button
+            onClick={() => setLang((prev) => prev === "en" ? "ja" : "en")}
+            style={{
+              display: "flex", alignItems: "center", gap: 7,
+              background: tweaks.darkHeader ? "#1a3325" : "#f0fdf4",
+              border: `1.5px solid ${accent}44`,
+              borderRadius: 20, padding: "6px 12px", marginRight: 10,
+              color: accent, cursor: "pointer", fontWeight: 700, fontSize: 12
+            }}>
+            {t.langToggle}
+          </button>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 7,
+            background: tweaks.darkHeader ? "#1a3325" : "#f0fdf4",
+            border: `1.5px solid ${accent}44`,
+            borderRadius: 20, padding: "6px 14px"
+          }}>
+            <div style={{ width: 7, height: 7, borderRadius: "50%", background: accent, animation: "pulse-ring 1.5s infinite" }} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: accent }}>Local Model</span>
+          </div>
+        </div>
+      </header>
+
+      {/* ── HERO ── */}
+      <section style={{
+        background: tweaks.darkHeader ? "#0d1f17" : "#f0fdf4",
+        position: "relative", overflow: "hidden",
+        padding: "48px 0 56px",
+        minHeight: 460
+      }}>
+        {/* Background forest canopy — animated nature scene */}
+        <div style={{
+          position: "absolute", inset: 0,
+          backgroundImage: "url(https://images.unsplash.com/photo-1448375240586-882707db888b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1920)",
+          backgroundSize: "120%",
+          backgroundPosition: "center",
+          animation: "forest-pan 20s ease-in-out infinite alternate",
+        }} />
+        {/* Sun rays overlay */}
+        <div style={{
+          position: "absolute", inset: 0,
+          background: "radial-gradient(ellipse at 60% 10%, rgba(134,239,172,0.18) 0%, transparent 60%), radial-gradient(ellipse at 30% 0%, rgba(255,255,200,0.10) 0%, transparent 50%)",
+          animation: "ray-pulse 6s ease-in-out infinite alternate",
+          pointerEvents: "none",
+        }} />
+
+        {/* Dark gradient overlay for text legibility */}
+        <div style={{
+          position: "absolute", inset: 0,
+          background: "linear-gradient(90deg, rgba(6,20,12,0.82) 0%, rgba(6,20,12,0.55) 60%, rgba(6,20,12,0.25) 100%)",
+          pointerEvents: "none",
+        }} />
+
+        <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 32px", position: "relative", display: "flex", gap: 48, alignItems: "flex-start" }}>
+          {/* Left: hero text */}
+          <div style={{ flex: 1, paddingTop: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+              <div style={{ width: 32, height: 2, background: accent }} />
+              <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", color: accent, textTransform: "uppercase" }}>
+                {t.aiTag}
+              </span>
+            </div>
+            <h1 style={{ fontFamily: "DM Serif Display", fontSize: 52, lineHeight: 1.1, color: "#fff", marginBottom: 16 }}>
+              {t.heroTitleA}<br />
+              {t.heroTitleB} <span style={{ color: accent }}>{t.heroTitleC}</span>
+              <span style={{ marginLeft: 12, display: "inline-block", verticalAlign: "middle" }}>
+                <svg width="48" height="32" viewBox="0 0 60 32" fill="none">
+                  {[4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56].map((x, i) =>
+                  <rect key={i} x={x - 2} y={16 - [8, 14, 10, 16, 12, 14, 16, 10, 14, 8, 12, 16, 10, 12][i]} width="3" height={[16, 28, 20, 32, 24, 28, 32, 20, 28, 16, 24, 32, 20, 24][i]} rx="1.5" fill={accent} opacity={0.7 + i % 3 * 0.1} />
+                  )}
+                </svg>
+              </span>
+            </h1>
+            <p style={{ fontSize: 16, color: "#9dbfac", maxWidth: 420, lineHeight: 1.6, marginBottom: 28 }}>
+              {t.heroDesc}
+            </p>
+            <div style={{ display: "flex", gap: 24 }}>
+              {[
+              { icon: "🔒", label: "100% Local", sub: "Your data stays on device" },
+              { icon: "🛡️", label: "Privacy First", sub: "No cloud uploads" },
+              { icon: "🌿", label: "Wildlife Focus", sub: "50+ species" }].
+              map((f) =>
+              <div key={f.label} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <span style={{ fontSize: 18 }}>{f.icon}</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>{f.label}</div>
+                    <div style={{ fontSize: 11, color: "#6a9e7a" }}>{f.sub}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Upload/analyze panel */}
+          <div style={{
+            width: 380, flexShrink: 0,
+            background: "#f0fdf4ee",
+            backdropFilter: "blur(12px)",
+            borderRadius: tweaks.roundness + 4,
+            border: "1.5px solid #d1fae5",
+            overflow: "hidden",
+            boxShadow: "0 20px 60px #00000033"
+          }}>
+            <div style={{ padding: "20px 20px 0", borderBottom: "1px solid #bbf7d0", paddingBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 16, color: "#1a2e22" }}>{t.uploadTitle}</div>
+              <div style={{ fontSize: 12, color: "#5a7a66", marginTop: 3 }}>{t.uploadFormats}</div>
+            </div>
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+              <UploadCard tweaks={tweaks} onFileLoaded={handleFileLoaded} />
+              {fileLoaded &&
+              <div style={{ animation: "fade-slide-up 0.3s ease" }}>
+                  <AudioPlayer tweaks={tweaks} fileName={selectedFile?.name} />
+                </div>
+              }
+              <RecordButton tweaks={tweaks} onRecorded={handleFileLoaded} lang={lang} />
+              <button
+                onClick={handleAnalyze}
+                disabled={!fileLoaded}
+                style={{
+                  background: fileLoaded ? `linear-gradient(90deg, ${tweaks.darkHeader ? "#16a34a" : "#22c55e"}, #059669)` : "#e2ede7",
+                  color: fileLoaded ? "#fff" : "#86a892",
+                  border: "none", borderRadius: tweaks.roundness - 4,
+                  padding: "14px", fontSize: 15, fontWeight: 700,
+                  cursor: fileLoaded ? "pointer" : "not-allowed",
+                  fontFamily: "DM Sans",
+                  boxShadow: fileLoaded ? `0 6px 24px ${accent}55` : "none",
+                  transition: "all 0.2s",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                  width: "100%"
+                }}
+                onMouseEnter={(e) => {if (fileLoaded) e.currentTarget.style.transform = "translateY(-1px)";}}
+                onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}>
+                
+                {analyzing ?
+                <>
+                    <div style={{ width: 18, height: 18, border: "2.5px solid white", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                    {t.analyzing}
+                  </> :
+
+                <>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                      <path d="M3 18v-6a9 9 0 0118 0v6" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                      <path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3v5zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3v5z" fill="white" />
+                    </svg>
+                    {t.analyze}
+                  </>
+                }
+              </button>
+              <div style={{ textAlign: "center", fontSize: 11, color: "#86a892" }}>
+                {t.localNote}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── MAIN CONTENT ── */}
+      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "40px 32px 60px" }}>
+
+        {/* Results (conditional) */}
+        {analyzed &&
+        <div className="results-enter" style={{ marginBottom: 40 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+              <div style={{ width: 4, height: 24, background: accent, borderRadius: 2 }} />
+              <h2 style={{ fontSize: 22, fontWeight: 700, color: "#1a2e22" }}>{t.analysisResults}</h2>
+              <div style={{
+              background: "#dcfce7", border: "1.5px solid #bbf7d0",
+              padding: "3px 10px", borderRadius: 20,
+              fontSize: 12, fontWeight: 600, color: "#16a34a"
+            }}>1 {t.fileAnalyzed}</div>
+            </div>
+            <ResultsPanel tweaks={tweaks} predictions={predictions} />
+          </div>
+        }
+
+        {/* Two columns: How it Works + Recent */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, marginBottom: 40, background: "#ecfdf5", borderRadius: tweaks.roundness + 4, padding: 20, border: "1.5px solid #bbf7d0" }}>
+
+          {/* How it works */}
+          <div className="nature-panel" style={{ borderRadius: tweaks.roundness, border: "1.5px solid #86efac", padding: 28, boxShadow: "0 4px 24px #22c55e18" }}>
+            {/* Drifting leaves */}
+            {[
+            { top: "8%", left: "82%", delay: "0s", dur: "6s", anim: "leaf-fall", color: "#1f8f4f" },
+            { top: "5%", left: "60%", delay: "1.8s", dur: "7.5s", anim: "leaf-fall2", color: "#2fb464" },
+            { top: "2%", left: "40%", delay: "3.2s", dur: "5.8s", anim: "leaf-fall", color: "#58c97a" },
+            { top: "0%", left: "20%", delay: "0.9s", dur: "6.8s", anim: "leaf-fall2", color: "#1f8f4f" },
+            { top: "6%", left: "72%", delay: "2.4s", dur: "7.1s", anim: "leaf-fall", color: "#2fb464" },
+            { top: "1%", left: "32%", delay: "1.3s", dur: "6.4s", anim: "leaf-fall2", color: "#58c97a" }].
+            map((l, i) =>
+            <div key={i} className="leaf" style={{
+              top: l.top, left: l.left,
+              animation: `${l.anim} ${l.dur} ${l.delay} ease-in infinite`
+            }}>
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                  <path
+                    d="M20 4c-6.4.5-11 4.4-12.9 8.7-1.3 2.9-.8 5.8 1.7 7.3 2.5 1.6 5.6.8 7.9-1.4C20 15.5 21.2 9.5 20 4Z"
+                    fill={l.color}
+                    opacity="0.9" />
+                  <path
+                    d="M8 15.5c2.2-1.1 4.3-2.9 6.8-5.8"
+                    stroke="#e8ffe9"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                    opacity="0.7" />
+                </svg>
+              </div>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
+              <div style={{ width: 4, height: 20, background: accent, borderRadius: 2 }} />
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1a2e22" }}>How It Works</h2>
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 0 }}>
+              {[
+              { step: "1", title: "Upload Audio", desc: "Upload a recording of an animal sound", icon:
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke={accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              },
+              { step: "2", title: "Process Audio", desc: "Audio is analyzed locally on your device", icon:
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">{[3, 6, 9, 12, 15, 18, 21].map((x, i) => <rect key={i} x={x - 1} y={12 - [4, 8, 6, 10, 6, 8, 4][i]} width="2" height={[8, 16, 12, 20, 12, 16, 8][i]} rx="1" fill={accent} opacity="0.7" />)}</svg>
+              },
+              { step: "3", title: "AI Prediction", desc: "Our model predicts the species", icon:
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke={accent} strokeWidth="2" /><path d="M8 12a4 4 0 008 0" stroke={accent} strokeWidth="2" strokeLinecap="round" /><circle cx="9" cy="9" r="1" fill={accent} /><circle cx="15" cy="9" r="1" fill={accent} /></svg>
+              },
+              { step: "4", title: "Get Results", desc: "View detailed predictions and scores", icon:
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><polyline points="20 6 9 17 4 12" stroke={accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              }].
+              map((s, i) =>
+              <React.Fragment key={i}>
+                  <div style={{ flex: 1, textAlign: "center" }}>
+                    <div style={{
+                    width: 52, height: 52, borderRadius: 14,
+                    background: "#f0fdf4", border: "2px solid #bbf7d0",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    margin: "0 auto 10px"
+                  }}>{s.icon}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#1a2e22" }}>{s.step}. {s.title}</div>
+                    <div style={{ fontSize: 11, color: "#5a7a66", marginTop: 4, lineHeight: 1.4 }}>{s.desc}</div>
+                  </div>
+                  {i < 3 &&
+                <div style={{ paddingTop: 22, flexShrink: 0, display: "flex", alignItems: "center", flexDirection: "column", gap: 3 }}>
+                      <svg width="28" height="20" viewBox="0 0 28 20" fill="none">
+                        <path d="M2 10 Q8 4 14 10 Q20 16 26 10" stroke={accent} strokeWidth="2" strokeLinecap="round" fill="none" opacity="0.5" />
+                        <path d="M22 6 L26 10 L22 14" stroke={accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                }
+                </React.Fragment>
+              )}
+            </div>
+          </div>
+
+          {/* Recent Predictions */}
+          <div style={{ background: "#ecfdf5", borderRadius: tweaks.roundness, border: "1.5px solid #86efac", overflow: "hidden" }}>
+            {/* Nature image banner */}
+            <div style={{ position: "relative", height: 110, overflow: "hidden" }}>
+              <img
+                src="https://images.unsplash.com/photo-1774984654175-1c637766cd00?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=800"
+                alt="Forest nature"
+                style={{
+                  width: "100%", height: "100%", objectFit: "cover",
+                  animation: "float-up 10s ease-in-out infinite",
+                  transformOrigin: "center center"
+                }} />
+              
+              <div style={{
+                position: "absolute", inset: 0,
+                background: "linear-gradient(to bottom, transparent 30%, #ecfdf5 100%)"
+              }} />
+
+            </div>
+            <div style={{ padding: "4px 28px 28px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 4, height: 20, background: accent, borderRadius: 2 }} />
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1a2e22" }}>{t.recentPredictions}</h2>
+              </div>
+              <button style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  fontSize: 12, color: accent, fontWeight: 600, fontFamily: "DM Sans"
+                }} onClick={refreshHistory}>{t.viewAllHistory}</button>
+            </div>
+            {historyItems.length === 0 &&
+              <div style={{ fontSize: 12, color: "#5a7a66", padding: "8px 0 12px" }}>{t.noHistory}</div>
+            }
+            {historyItems.map((item, i) =>
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: 14,
+                padding: "10px 0",
+                borderBottom: i < historyItems.length - 1 ? "1px solid #bbf7d0" : "none"
+              }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10, overflow: "hidden",
+                  background: "#f0fdf4", border: "1.5px solid #bbf7d0", flexShrink: 0
+                }}>
+                  <img src="https://images.unsplash.com/photo-1774984654175-1c637766cd00?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=80" alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "#1a2e22" }}>{item.name}</div>
+                  <div style={{ fontSize: 11, color: "#5a7a66", fontStyle: "italic" }}>{item.species}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: accent }}>{Math.round(item.confidence * 10) / 10}%</div>
+                  <div style={{ fontSize: 11, color: "#86a892" }}>{prettyAge(item.ts)}</div>
+                </div>
+                <div style={{ width: 60 }}>
+                  <div style={{ height: 4, background: "#e2ede7", borderRadius: 2 }}>
+                    <div style={{ height: "100%", width: `${item.confidence}%`, background: `linear-gradient(90deg, ${accent}88, ${accent})`, borderRadius: 2 }} />
+                  </div>
+                </div>
+              </div>
+              )}
+            </div>{/* end inner padding */}
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 20
+        }}>
+          {[
+          { value: "50+", label: "Animal Species", icon:
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2a4 4 0 014 4c0 1.5-.8 2.8-2 3.5V12h-4V9.5A4 4 0 018 6a4 4 0 014-4zM8 14h8v2a4 4 0 01-8 0v-2z" fill={accent} opacity="0.8" /></svg>
+          },
+          { value: "10,000+", label: "Audio Samples", icon:
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">{[4, 7, 10, 13, 16, 19, 22].map((x, i) => <rect key={i} x={x - 1.5} y={12 - [4, 8, 6, 10, 6, 8, 4][i]} width="3" height={[8, 16, 12, 20, 12, 16, 8][i]} rx="1.5" fill={accent} opacity="0.8" />)}</svg>
+          },
+          { value: "98%", label: "Model Accuracy", icon:
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke={accent} strokeWidth="2.5" opacity="0.3" /><path d="M12 3a9 9 0 019 9" stroke={accent} strokeWidth="2.5" strokeLinecap="round" /><circle cx="12" cy="12" r="3" fill={accent} /></svg>
+          },
+          { value: "100%", label: "Local & Private", icon:
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.5C16.5 22.15 20 17.25 20 12V6l-8-4z" fill={accent} opacity="0.2" stroke={accent} strokeWidth="2" /><polyline points="8 12 11 15 16 10" stroke={accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          }].
+          map((s) =>
+          <div key={s.label} style={{
+            background: "#f0fdf4", borderRadius: tweaks.roundness,
+            border: "1.5px solid #bbf7d0",
+            padding: "24px 28px",
+            display: "flex", alignItems: "center", gap: 16
+          }}>
+              <div style={{
+              width: 48, height: 48, borderRadius: 14,
+              background: "#f0fdf4", border: "2px solid #bbf7d0",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0
+            }}>{s.icon}</div>
+              <div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: "#1a2e22", letterSpacing: "-0.02em" }}>{s.value}</div>
+                <div style={{ fontSize: 12, color: "#5a7a66", marginTop: 2 }}>{s.label}</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── FOOTER ── */}
+      <footer style={{
+        background: "#0d1f17",
+        padding: "40px 0 28px",
+        borderTop: "1px solid #1a3325"
+      }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 32px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr", gap: 40, marginBottom: 36 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 9,
+                  background: accent,
+                  display: "flex", alignItems: "center", justifyContent: "center"
+                }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 18v-6a9 9 0 0118 0v6" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                    <path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3v5zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3v5z" fill="white" />
+                  </svg>
+                </div>
+                <span style={{ fontWeight: 700, color: "#fff", fontSize: 15 }}>ForestEcho</span>
+              </div>
+              <p style={{ fontSize: 12, color: "#5a7a66", lineHeight: 1.7 }}>
+                Local AI model for animal sound recognition.<br />Built for privacy. Made for wildlife.
+              </p>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#9dbfac", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>Quick Links</div>
+              {["Home", "About", "Model", "Species", "How It Works", "Contact"].map((l) =>
+              <div key={l} style={{ fontSize: 13, color: "#5a7a66", marginBottom: 8, cursor: "pointer" }}>{l}</div>
+              )}
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#9dbfac", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>Model Info</div>
+              {[
+              ["Model Type:", "CNN + Transformer"],
+              ["Trained On:", "Local Wildlife Dataset"],
+              ["Running On:", "Your Device (Local)"]].
+              map(([k, v]) =>
+              <div key={k} style={{ display: "flex", gap: 8, fontSize: 12, marginBottom: 8 }}>
+                  <span style={{ color: "#5a7a66" }}>{k}</span>
+                  <span style={{ color: "#9dbfac" }}>{v}</span>
+                </div>
+              )}
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 12, color: "#5a7a66" }}>Made with ❤️ for wildlife</div>
+            </div>
+          </div>
+          <div style={{ borderTop: "1px solid #1a3325", paddingTop: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: "#3a5a44" }}>© 2024 ForestEcho. All rights reserved.</span>
+            <div style={{ display: "flex", gap: 16 }}>
+              {["Privacy Policy", "Terms of Use"].map((l) =>
+              <span key={l} style={{ fontSize: 12, color: "#3a5a44", cursor: "pointer" }}>{l}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </footer>
+
+      {/* ── TWEAKS PANEL ── */}
+      <TweaksPanel>
+        <TweakSection label="Brand" />
+        <TweakColor label="Accent Color" value={tweaks.accentColor} onChange={(v) => setTweak("accentColor", v)} />
+        <TweakToggle label="Dark Header" value={tweaks.darkHeader} onChange={(v) => setTweak("darkHeader", v)} />
+        <TweakSection label="Audio Player" />
+        <TweakToggle label="Show Waveform" value={tweaks.showWaveform} onChange={(v) => setTweak("showWaveform", v)} />
+        <TweakSection label="Results" />
+        <TweakSlider label="Top Confidence %" value={tweaks.confidenceScore} min={50} max={99} step={1} onChange={(v) => setTweak("confidenceScore", v)} />
+        <TweakText label="Top Animal Name" value={tweaks.topAnimal} onChange={(v) => setTweak("topAnimal", v)} />
+        <TweakText label="Species (Latin)" value={tweaks.topSpecies} onChange={(v) => setTweak("topSpecies", v)} />
+        <TweakSection label="Layout" />
+        <TweakSlider label="Corner Radius" value={tweaks.roundness} min={4} max={28} step={2} onChange={(v) => setTweak("roundness", v)} />
+      </TweaksPanel>
+    </div>);
+
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+
+<div id="root"></div>
+</body>
+</html>

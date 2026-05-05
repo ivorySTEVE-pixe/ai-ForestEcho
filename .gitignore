@@ -6,6 +6,7 @@ __pycache__/
 .claude/
 data/raw/*
 data/processed/*
+data/history/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 models/*.pt
