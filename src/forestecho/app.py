@@ -1138,7 +1138,10 @@ def build_server(ckpt_path: str | None) -> gr.Server:
                 }
             )
         except Exception as exc:
-            return JSONResponse({"error": f"Prediction failed: {exc}"}, status_code=500)
+            return JSONResponse(
+                {"error": f"Prediction failed ({exc.__class__.__name__}): {exc}"},
+                status_code=500,
+            )
         finally:
             if temp_path is not None:
                 temp_path.unlink(missing_ok=True)
